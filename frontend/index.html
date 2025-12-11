@@ -1,0 +1,461 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>NSW Carbon Credits Allocation — Quick Preview</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#0f1113; color:#e6eef2; padding:20px; }
+    .card { background:#131416; border:1px solid #222426; padding:16px; border-radius:12px; margin-bottom:12px; }
+    .hero { display:flex; align-items:center; gap:16px; }
+    .big { font-size:2.1rem; font-weight:700; }
+    .muted { color:#9aa0a6; font-size:0.9rem; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; }
+    th,td { text-align:left; padding:6px 8px; border-bottom:1px solid #202225; font-size:0.95rem; }
+    button { padding:8px 12px; border-radius:8px; background:#4caf50; color:#061014; border:none; cursor:pointer; font-weight:600; }
+    .small { font-size:0.9rem; }
+    .toggle { background:#081217; color:#81d4fa; border:1px solid #18303b; }
+    /* Interpretation card - minimal styling, adapt to your theme */
+    .interpretation-card {
+      background: #101214;
+      border: 1px solid rgba(255,255,255,0.04);
+      padding: 14px;
+      border-radius: 8px;
+      margin-top: 18px;
+      color: #e6eef6;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.45);
+      max-width: 900px;
+    }
+    .interpretation-card .card-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:12px;
+      margin-bottom:6px;
+    }
+    .interpretation-card h3 { margin:0; font-size:1.05rem; color:#fff; }
+    .info-btn { background:transparent; border:none; color:#8fbefc; cursor:pointer; }
+    .card-content p { margin:0 0 8px 0; color:#cfe5ff; }
+    .interp-actions { margin:0; padding-left:18px; color:#b8d6ff; }
+    .interp-actions li { margin-bottom:4px; }
+    .card-footer { display:flex; gap:8px; margin-top:10px; }
+    .btn-small { background:#173a2a; color:#bdf5c3; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    .modal { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; z-index:9999; }
+    .modal[aria-hidden="false"] { display:flex; }
+    .modal-content { background:#0f1113; padding:18px; border-radius:8px; max-width:900px; width:90%; color:#e6eef6; }
+    .modal-close { float:right; border:none; background:transparent; color:#fff; font-size:1.1rem; cursor:pointer; }
+
+    /* charts row small polish */
+    #charts-row { display:flex; gap:18px; align-items:flex-start; margin-top:18px; flex-wrap:wrap; }
+    #charts-row > div { transition: transform 220ms cubic-bezier(.2,.9,.2,1), box-shadow 220ms; box-shadow: 0 6px 16px rgba(0,0,0,0.45); border-radius:8px; overflow:hidden; }
+    #charts-row > div:hover { transform: translateY(-6px) scale(1.01); box-shadow: 0 14px 36px rgba(0,0,0,0.55); }
+
+    /* small responsive */
+    @media (max-width:900px) {
+      .hero { flex-direction:column; align-items:flex-start; }
+      .big { font-size:1.6rem; }
+    }
+  </style>
+
+  <!-- ECharts CDN (needed for treemap & gauge) -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+  <h1>NSW Carbon Credits Allocation — Quick Preview</h1>
+
+  <div class="card hero">
+    <div>
+      <div class="muted">Selected year</div>
+      <div id="year" class="big">2024</div>
+    </div>
+    <div style="flex:1">
+      <div class="muted">Total Available Credits (CAP)</div>
+      <div id="cap" class="big">—</div>
+      <div class="muted small">units: tCO2e</div>
+    </div>
+    <div style="text-align:right">
+      <div class="muted">Controls</div>
+      <div style="margin-top:8px">
+        <button id="refresh">Refresh</button>
+        <button id="toggleDebug" class="toggle">Show allocations</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="muted">Metrics</div>
+    <div style="display:flex; gap:12px; margin-top:8px;">
+      <div style="flex:1">
+        <div class="muted small">Jain index (NSW)</div>
+        <div id="jain_nsw" class="big">—</div>
+      </div>
+      <div style="flex:1">
+        <div class="muted small">Jain index (Proportional)</div>
+        <div id="jain_prop" class="big">—</div>
+      </div>
+      <div style="flex:1">
+        <div class="muted small">Jain index (Equal)</div>
+        <div id="jain_equal" class="big">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interpretation Card  -->
+  <div id="interpretation-card" class="card interpretation-card" aria-live="polite">
+    <div class="card-header">
+      <h3>Interpretation</h3>
+      <button id="interpret-info" class="info-btn" aria-label="More info">ℹ️</button>
+    </div>
+
+    <div id="interp-summary" class="card-content">
+      <p id="interp-line">Loading interpretation...</p>
+      <ul id="interp-actions" class="interp-actions"></ul>
+    </div>
+
+    <div class="card-footer">
+      <button id="interp-more" class="btn-small">More details</button>
+      <button id="interp-copy" class="btn-small">Copy summary</button>
+    </div>
+  </div>
+
+  <!-- Modal for detailed explanation -->
+  <div id="interp-modal" class="modal" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="modal-content">
+      <button id="interp-close" class="modal-close" aria-label="Close">✕</button>
+      <h3>Detailed Interpretation</h3>
+      <div id="interp-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Charts row: CAP gauge + treemap (no India map here) -->
+  <div id="charts-row">
+    <div id="cap-gauge" style="width:320px; height:240px; background:#0f1113; padding:8px;"></div>
+    <div id="treemap" style="flex:1 1 420px; min-width:360px; height:240px; background:#0f1113; padding:8px;"></div>
+  </div>
+
+  <!-- Debug allocations -->
+  <div id="debug" class="card" style="display:none; margin-top:18px;">
+    <div class="muted">Firm allocations (debug)</div>
+    <table id="firmTable">
+      <thead><tr><th>Firm</th><th>Sector</th><th>Demand</th><th>Alloc (NSW)</th><th>Coverage</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+<script>
+const API_BASE = "http://localhost:8000"; // change if needed
+const DEFAULT_CSV = "api/assets/dataset.csv";
+
+async function fetchAlloc() {
+  const params = new URLSearchParams({
+    cap: 4000000000,
+    alpha: 0.6,
+    beta: 0.1,
+    path: DEFAULT_CSV,
+  });
+  const url = `${API_BASE}/allocate-from-csv?${params.toString()}`;
+  try {
+    document.getElementById('cap').textContent = 'Loading...';
+    const res = await fetch(url);
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt || res.statusText);
+    }
+    const json = await res.json();
+    render(json);
+  } catch (err) {
+    console.error(err);
+    alert("Error fetching allocation: " + (err.message || err));
+    document.getElementById('cap').textContent = 'Error';
+  }
+}
+
+function render(data) {
+  if (!data) return;
+  // KPIs
+  document.getElementById('cap').textContent = formatNumber(data.cap);
+  document.getElementById('jain_nsw').textContent = (data.metrics && data.metrics.jain_nsw !== undefined)
+    ? Number(data.metrics.jain_nsw).toFixed(4) : '—';
+  document.getElementById('jain_prop').textContent = (data.metrics && data.metrics.jain_prop !== undefined)
+    ? Number(data.metrics.jain_prop).toFixed(4) : '—';
+  document.getElementById('jain_equal').textContent = (data.metrics && data.metrics.jain_equal !== undefined)
+    ? Number(data.metrics.jain_equal).toFixed(4) : '—';
+
+  // Table (first 200 rows)
+  const tbody = document.querySelector('#firmTable tbody');
+  tbody.innerHTML = '';
+  (data.firm_results || []).slice(0, 200).forEach(f => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(f.name || f.id || '—')}</td>
+      <td>${escapeHtml(f.sector || '—')}</td>
+      <td>${formatNumber(f.demand_d)}</td>
+      <td>${formatNumber(f.alloc_nsw)}</td>
+      <td>${(f.coverage_nsw === null || f.coverage_nsw === undefined) ? '—' : ((f.coverage_nsw * 100).toFixed(1) + '%')}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  // Dynamic beta: prefer data.beta (if echoed by backend), otherwise fall back to 0.1
+  const beta = (data.beta !== undefined) ? Number(data.beta) : 0.1;
+
+  // Update interpretation (pass sum_d if available for CAP checks)
+  try {
+    updateInterpretation(data.metrics, data.cap, beta, data.metrics?.sum_d ?? null);
+  } catch (e) {
+    console.error("updateInterpretation failed:", e);
+  }
+
+  // Render charts once
+  try {
+    renderCharts(data);
+  } catch (e) {
+    console.error("renderCharts failed:", e);
+  }
+}
+
+function formatNumber(n) {
+  if (n === null || n === undefined) return '—';
+  const v = Number(n);
+  if (isNaN(v)) return '—';
+  if (v >= 1e9) return (v/1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return (v/1e6).toFixed(1) + 'M';
+  if (v >= 1e3) return (v/1e3).toFixed(1) + 'K';
+  return v.toString();
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+document.getElementById('refresh').addEventListener('click', fetchAlloc);
+document.getElementById('toggleDebug').addEventListener('click', () => {
+  const el = document.getElementById('debug');
+  const shown = el.style.display !== 'block';
+  el.style.display = shown ? 'block' : 'none';
+  document.getElementById('toggleDebug').textContent = shown ? 'Hide allocations' : 'Show allocations';
+});
+
+fetchAlloc();
+
+/* ----------------
+   Interpretation helpers
+   ---------------- */
+function fmtNumber(n) {
+  if (n === null || n === undefined) return "—";
+  if (Math.abs(n) >= 1e9) return (n/1e9).toFixed(2) + "B";
+  if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(1) + "M";
+  if (Math.abs(n) >= 1e3) return (n/1e3).toFixed(1) + "K";
+  return Number(n).toLocaleString();
+}
+
+function interpretJain(j) {
+  if (j >= 0.8) return { level: "High equality", message: "Distribution is quite equal (Jain close to 1)." };
+  if (j >= 0.2) return { level: "Moderate equality", message: "Moderate inequality — some firms get larger shares." };
+  return { level: "Low equality", message: "Very unequal distribution — a few large emitters dominate demand." };
+}
+
+function interpretMetrics(metrics, cap, beta) {
+  const j_nsw = metrics?.jain_nsw ?? null;
+  const j_prop = metrics?.jain_prop ?? null;
+  const j_equal = metrics?.jain_equal ?? null;
+  const total_alloc = metrics?.total_alloc_nsw ?? null;
+  const jMsg = j_nsw !== null ? interpretJain(j_nsw) : {level:"N/A", message:"No data"};
+
+  const summary = `Jain index measures equality (1 = perfect equality). Current NSW Jain: ${j_nsw !== null ? j_nsw.toFixed(4) : '—'} (${jMsg.level}). Equal share Jain = ${j_equal !== null ? j_equal.toFixed(4) : '—'}.`;
+  const actions = [];
+  if (j_nsw !== null && j_nsw < 0.2) actions.push("High inequality detected — investigate top emitters and outliers.");
+  else actions.push("Distribution is reasonably balanced for the chosen parameters.");
+
+  if (cap !== undefined && beta !== undefined && metrics?.total_cap !== undefined) {
+    const minRequired = beta * (metrics?.sum_of_demands ?? null);
+    if (minRequired && cap < minRequired) {
+      actions.push(`Current CAP (${fmtNumber(cap)}) is below the minimum required CAP (${fmtNumber(minRequired)}) for β=${beta}. Increase CAP or reduce β.`);
+    } else {
+      actions.push(`CAP (${fmtNumber(cap)}) looks feasible for β=${beta}.`);
+    }
+  }
+
+  actions.push("Try tuning β (equity floors) or α (weight blend) to explore fairness vs efficiency trade-offs.");
+  actions.push("You can export results or run scenario comparisons to compare NSW vs proportional vs equal baselines.");
+
+  return { summary, actions, details: { jain_nsw: j_nsw, jain_prop: j_prop, jain_equal: j_equal, total_alloc: total_alloc }};
+}
+
+function updateInterpretation(metrics, cap, beta, sum_of_demands=null) {
+  if (!metrics) {
+    document.getElementById('interp-line').textContent = 'No metrics available to interpret.';
+    return;
+  }
+  if (sum_of_demands) metrics.sum_of_demands = sum_of_demands;
+  const res = interpretMetrics(metrics, cap, beta);
+  document.getElementById('interp-line').textContent = res.summary;
+  const ul = document.getElementById('interp-actions');
+  ul.innerHTML = "";
+  for (const a of res.actions) {
+    const li = document.createElement('li');
+    li.textContent = a;
+    ul.appendChild(li);
+  }
+
+  const modalBody = document.getElementById('interp-modal-body');
+  modalBody.innerHTML = `
+    <p><strong>Jain Index (NSW):</strong> ${metrics.jain_nsw !== undefined ? Number(metrics.jain_nsw).toFixed(5) : '—'}</p>
+    <p><strong>Jain Index (Proportional):</strong> ${metrics.jain_prop !== undefined ? Number(metrics.jain_prop).toFixed(5) : '—'}</p>
+    <p><strong>Jain Index (Equal):</strong> ${metrics.jain_equal !== undefined ? Number(metrics.jain_equal).toFixed(5) : '—'}</p>
+    <p><strong>Total allocated (NSW):</strong> ${fmtNumber(metrics.total_alloc_nsw ?? metrics.total_alloc)}</p>
+    <hr/>
+    <p><em>Interpretation tips:</em> A low Jain index means inequality — expected when emissions/demand are highly skewed across firms. This is not an error; it is a feature of the data.</p>
+    <p><em>Suggested actions:</em> tune CAP/β, investigate large emitters, or compare NSW with proportional baseline to see differences in coverage.</p>
+  `;
+
+  document.getElementById('interp-more').onclick = () => {
+    document.getElementById('interp-modal').setAttribute('aria-hidden','false');
+  };
+  document.getElementById('interp-close').onclick = () => {
+    document.getElementById('interp-modal').setAttribute('aria-hidden','true');
+  };
+  document.getElementById('interpret-info').onclick = () => {
+    document.getElementById('interp-modal').setAttribute('aria-hidden','false');
+  };
+  document.getElementById('interp-copy').onclick = () => {
+    const text = res.summary + "\n" + res.actions.join("\n");
+    navigator.clipboard?.writeText(text).then(()=> alert('Summary copied to clipboard'));
+  };
+}
+
+/* ---------- Treemap fallback helpers ---------- */
+function firmDemand(f) { return Number(f.demand_d || 0); }
+function demandBucketLabel(value, thresholds) {
+  if (value >= thresholds[2]) return "Very large";
+  if (value >= thresholds[1]) return "Large";
+  if (value >= thresholds[0]) return "Medium";
+  return "Small";
+}
+function computeQuantiles(values, qArray=[0.25,0.75,0.95]) {
+  if (!values || values.length === 0) return [0,0,0];
+  const sorted = values.slice().sort((a,b)=>a-b);
+  function atQuantile(q) {
+    const idx = Math.floor((sorted.length-1) * q);
+    return sorted[Math.max(0, Math.min(sorted.length-1, idx))];
+  }
+  return qArray.map(atQuantile);
+}
+function aggregateByDemandBuckets(firm_results) {
+  const demands = firm_results.map(f => firmDemand(f));
+  const thresholds = computeQuantiles(demands, [0.25, 0.75, 0.95]);
+  const map = new Map();
+  firm_results.forEach(f => {
+    const d = firmDemand(f);
+    const bucket = demandBucketLabel(d, thresholds);
+    if (!map.has(bucket)) map.set(bucket, { bucket, demand:0, alloc:0, count:0 });
+    const cur = map.get(bucket);
+    cur.demand += d;
+    cur.alloc += Number(f.alloc_nsw || 0);
+    cur.count += 1;
+  });
+  return Array.from(map.values()).sort((a,b)=>b.demand - a.demand);
+}
+function aggregateTopN(firm_results, N=10) {
+  const sorted = firm_results.slice().sort((a,b)=>firmDemand(b) - firmDemand(a));
+  const top = sorted.slice(0, N);
+  const others = sorted.slice(N);
+  const othersAgg = others.reduce((acc, f) => { acc.demand += firmDemand(f); acc.alloc += Number(f.alloc_nsw || 0); return acc; }, {demand:0, alloc:0});
+  const arr = top.map(f => ({ name: f.name || f.id || 'Unknown', demand: firmDemand(f), alloc: Number(f.alloc_nsw || 0) }));
+  if (othersAgg.demand > 0) arr.push({ name: `Others (${others.length})`, demand: othersAgg.demand, alloc: othersAgg.alloc });
+  return arr;
+}
+
+/* ---------- Treemap renderer ---------- */
+let treemapChart = null;
+function renderTreemap(firmResults) {
+  const el = document.getElementById('treemap');
+  if (!el) return;
+  if (!treemapChart) treemapChart = echarts.init(el, null, { renderer: 'canvas' });
+
+  const haveSector = (firmResults || []).some(f => (f.sector || '').toString().trim().length > 0);
+  let treedata; let titleText;
+  if (haveSector) {
+    const map = new Map();
+    firmResults.forEach(f => {
+      const sector = (f.sector || 'Unknown').toString().trim() || 'Unknown';
+      const demand = firmDemand(f);
+      const alloc = Number(f.alloc_nsw || 0);
+      if (!map.has(sector)) map.set(sector, { name: sector, demand: 0, alloc: 0 });
+      const cur = map.get(sector);
+      cur.demand += demand; cur.alloc += alloc;
+    });
+    treedata = Array.from(map.values()).map(s => ({ name: s.name, value: s.demand, alloc: s.alloc }));
+    titleText = 'Emissions by sector';
+  } else {
+    if ((firmResults || []).length <= 50) {
+      treedata = aggregateTopN(firmResults, 12).map(x => ({ name: x.name, value: x.demand, alloc: x.alloc }));
+      titleText = 'Top firms by demand';
+    } else {
+      treedata = aggregateByDemandBuckets(firmResults).map(s => ({ name: `${s.bucket} (${s.count})`, value: s.demand, alloc: s.alloc }));
+      titleText = 'Demand buckets (fallback)';
+    }
+  }
+
+  if (!treedata || treedata.length === 0) {
+    treemapChart.clear();
+    treemapChart.setOption({ title:{text:'No data'}, graphic:[] });
+    return;
+  }
+
+  const option = {
+    title: { text: titleText, left: 'center', textStyle: { color:'#cfe5ff' } },
+    tooltip: { formatter: params => { const d = params.data; return `<b>${d.name}</b><br/>Demand: ${fmtNumber(d.value)}<br/>Alloc (NSW): ${fmtNumber(d.alloc)}`; } },
+    series: [{ name: 'Treemap', type: 'treemap', roam: false, label: { show: true, formatter: '{b}' }, data: treedata }],
+    animation: true
+  };
+  treemapChart.setOption(option);
+}
+
+/* ---------- CAP Gauge (ECharts) ---------- */
+let gaugeChart = null;
+function renderGauge(cap, totalAllocated) {
+  const el = document.getElementById('cap-gauge');
+  if (!el) return;
+  if (!gaugeChart) gaugeChart = echarts.init(el, null, { renderer: 'canvas' });
+  const usedPct = cap > 0 ? (totalAllocated / cap) * 100 : 0;
+  const option = {
+    backgroundColor: 'transparent',
+    series: [
+      {
+        name: 'CAP used',
+        type: 'gauge',
+        radius: '90%',
+        min: 0,
+        max: 100,
+        splitNumber: 10,
+        axisLine: { lineStyle: { width: 16, color: [[0.5, '#4caf50'], [0.85, '#ffd166'], [1, '#ff6b6b']] } },
+        axisTick: { length: 8 },
+        splitLine: { length: 14 },
+        pointer: { length: '70%', width: 6 },
+        title: { offsetCenter: [0, '-30%'], fontSize: 12, color: '#cfe5ff' },
+        detail: {
+          valueAnimation: true,
+          formatter: function(v) {
+            const used = (v/100) * cap;
+            return `${(v).toFixed(1)}% \n${fmtNumber(used)} / ${fmtNumber(cap)}`;
+          }
+        },
+        data: [{ value: Math.min(100, Math.max(0, usedPct)), name: 'Utilization' }]
+      }
+    ]
+  };
+  gaugeChart.setOption(option);
+}
+
+/* ---------- Main charts wrapper ---------- */
+function renderCharts(data) {
+  const cap = Number(data.cap || 0);
+  const totalAllocated = Number(data.metrics?.total_alloc_nsw ?? data.metrics?.total_alloc ?? cap);
+  const firms = data.firm_results || [];
+  renderGauge(cap, totalAllocated);
+  renderTreemap(firms);
+}
+
+</script>
+</body>
+</html>
